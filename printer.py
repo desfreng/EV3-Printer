@@ -1,18 +1,18 @@
 # coding=utf-8
 
-"""The Printer module is made of classes witch allow to interact at and low level with the printer."""
+"""The Printer module is a set of classes witch allow interacting at a low level with the printer."""
 
 from time import sleep, time
 
-from ev3dev2.motor import LargeMotor, OUTPUT_A, OUTPUT_B, OUTPUT_C, OUTPUT_D, SpeedPercent
-from ev3dev2.sensor.lego import TouchSensor, ColorSensor
+from ev3dev2.motor import LargeMotor, OUTPUT_A, OUTPUT_B, OUTPUT_C, OUTPUT_D
+from ev3dev2.sensor.lego import ColorSensor
 
-debug_enabled = False
+debug = True
 _time = time()
 
 
 def _debug(obj, msg, begin_time=_time):
-    if debug_enabled:
+    if debug:
         print("[{}]({}) {}".format(time() - begin_time, obj.__class__.__name__, msg))
 
 
@@ -23,7 +23,7 @@ class Pen:
         _debug(self, "Creating Pen instance")
         self.default_power = power
 
-        self._pen_up_position = 0  # Lambda values. Needed to setup before !
+        self._pen_up_position = 0  # Lambda values. Needed to be set before !
         self._pen_down_position = 40
 
         self._m = LargeMotor(OUTPUT_C)
@@ -90,6 +90,9 @@ class Pen:
         self._pen_down_position = self._m.position
         self.up()
 
+    def save_energy(self):
+        self._m.off(False)
+
 
 class Carriage:
     default_power = 30
@@ -125,7 +128,7 @@ class Carriage:
 
         :param power: Power of the rotation
         """
-        self._m.on(-power)2
+        self._m.on(-power)
 
     def stop(self):
         """ Stop moving carriage
@@ -181,46 +184,75 @@ class Carriage:
 
 
 class Rollers:
-    default_power = 30
 
-    def __init__(self, power=default_power):
+    def __init__(self, power=30, prevent_paper_blocking=False):
         self.default_power = power
-        self._delta = 0
+        self._delta_in = 0
+        self._delta_out = 0
 
-        self._m = LargeMotor(OUTPUT_B)
-        self.reset()
+        self._in = LargeMotor(OUTPUT_A)
+        self._in.polarity = LargeMotor.POLARITY_NORMAL
+        self._out = LargeMotor(OUTPUT_D)
+        self._out.polarity = LargeMotor.POLARITY_INVERSED
 
-    def reset(self, power=default_power):
-        """Reset the carriage position and define a new origin for carriage's position
+        self._col = ColorSensor()
+        self._col.mode = ColorSensor.MODE_COL_COLOR
 
-        :param power: Power used to move the carriage
+        self._paper_taken = self._col.color == 6
+
+        self.reset(prevent_paper_blocking)
+
+    def reset(self, prevent_paper_blocking=False, power=None):
+        """Reset the rollers position and define a new origin for rollers position
+
+        :param prevent_paper_blocking: if true, roller will move to avoid paper blocking
+        :param power: Power used to move rollers
         """
+        if power is None:
+            power = self.default_power
 
-        self.right_limit(power=power, soft_limit=False)
-        self._m.on_for_degrees(power, 50)
-        self._delta = self._m.position
+        if self._paper_taken:
+            self.eject_paper()
+        elif prevent_paper_blocking:
+            self._in.on_for_rotations(power, 3, block=False)
+            self._out.on_for_rotations(power, 3)
 
-        self.go_to(0, power)
-
-    def up(self, power=default_power):
-        """Move carriage (pen will move too) to the 'left'
+    def up(self, power=None):
+        """Move paper to the 'up'
 
         :param power: Power of the rotation
         """
-        self._m.on(power)
+        if power is None:
+            power = self.default_power
 
-    def down(self, power=default_power):
-        """Move carriage (pen will move too) to the 'right'
+        self._in.on(power)
+        self._out.on(power)
+
+    def down(self, power=None):
+        """Move paper to the 'down'
 
         :param power: Power of the rotation
         """
-        self._m.on(-power)2
+        if power is None:
+            power = self.default_power
+
+        self._in.on(-power)
+        self._out.on(-power)
 
     def stop(self):
         """ Stop moving carriage
 
         """
-        self._m.off()
+        self._in.off()
+        self._out.off()
+
+    def save_energy(self):
+        self._in.off(False)
+        self._out.off(False)
+
+    @property
+    def has_paper(self):
+        return self._paper_taken
 
     @property
     def position(self):
@@ -228,191 +260,120 @@ class Rollers:
 
         :return: carriage position
         """
-        return self._m.position - self._delta
+        if not self.has_paper:
+            return None
+
+        return self._in.position - self._delta_in, self._out.position - self._delta_out
 
     @position.setter
     def position(self, value):
         """ Set carriage position
 
-        :param value: New carriage position"""
+        :param value: New roller position"""
         self.go_to(value)
 
-    def go_to(self, position, power=default_power, override=False):
+    def go_to(self, position, power=None, override=False):
+        if not self.has_paper:
+            raise ValueError("There is no paper.")
+
+        if power is None:
+            power = self.default_power
+
+        target_in = self._delta_in + position
+        target_out = self._delta_out + position
+
         _debug(self, "Reached position is {}".format(position))
 
-        if (not override) and (not -50 < position < 1240):
+        _debug(self, "DeltaIn {}".format(self._delta_in))
+        _debug(self, "DeltaOut {}".format(self._delta_out))
+
+        _debug(self, "Actual In {}".format(self._in.position))
+        _debug(self, "Actual Out {}".format(self._out.position))
+
+        _debug(self, "Target In {}".format(target_in))
+        _debug(self, "Target Out {}".format(target_out))
+
+        if (not override) and (not 0 < position < 515):
             raise ValueError("Position is out of reachable bounds.")
 
-        self._m.on_to_position(power, position + self._delta)
+        self._in.on_to_position(power, target_in, block=False)
+        self._out.on_to_position(power, target_out, block=True)
 
-    def move(self, position, power=default_power, override=False):
-        self.go_to(self.position + position, power, override)
+    def move(self, position, power=None):
+        if power is None:
+            power = self.default_power
 
-    def save_energy(self):
-        self._m.off(False)
+        target_in = self._in.position + position
+        target_out = self._out.position + position
 
-    def up_limit(self, soft_limit=True, power=default_power):
-        self.right(power)
+        self._in.on_to_position(power, target_in, block=False)
+        self._out.on_to_position(power, target_out, block=True)
 
-        self._m.wait_until_not_moving()
-        self.stop()
-        if soft_limit:
-            self.move(50, power)
+    def up_limit(self, power=None):
+        self.go_to(0, power)
 
-    def down_limit(self, soft_limit=True, power=default_power):
-        self.left(power)
+    def down_limit(self, power=None):
+        self.go_to(0, power)
 
-        self._m.wait_until_not_moving()
-        self.stop()
-
-        if soft_limit:
-            self.move(-50, power)
-
-class Printer:
-    """A Basic Printer class to interact with the printer at low level. Use this only if you need to interact exactly
-    with the printer. """
-
-    power_roller = 30
-    power_grip = 15
-    power_carriage = 30
-    power_pen = 20
-
-    def __init__(self, prevent_paper_blocking=True):
-        """ Constructor of Printer class
-
-
-        :param prevent_paper_blocking: Set it to 'False' in order to disable roller move
-        """
-        self.debug = debug
-        self._delta_carriage = 0
-        self._delta_pen = 0
-
-        self._pen_up_position = 8  # From Test for a pen
-        self._pen_down_position = 65  # From Test for a pen
-
-        self._in = LargeMotor(OUTPUT_A)
-        self._out = LargeMotor(OUTPUT_D)
-
-        self.color = ColorSensor()
-        self.touch_sensor = TouchSensor()
-
-        self.color.mode = ColorSensor.MODE_COL_COLOR
-
-        self._in.stop_action = LargeMotor.STOP_ACTION_HOLD
-        self._out.stop_action = LargeMotor.STOP_ACTION_HOLD
-
-        if prevent_paper_blocking:
-            self._debug("Eject Paper")
-            self._in.on_for_seconds(SpeedPercent(-100), 5, block=False)
-            self._out.on_for_seconds(SpeedPercent(100), 5, block=False)
-
-        if prevent_paper_blocking:
-            self._in.wait_until_not_moving()
-            self._out.wait_until_not_moving()
-
-    def _debug(self, msg):
-        if self.debug:
-            print(msg)
-
-    # Roller Methods
-
-    def up_degrees(self, deg, power=power_roller):
-        """ Turn Roller to make paper go 'up'
-
-        :param deg: Degrees of the rotation
-        :param power: Power of the rotation
-        """
-        self._in.on_for_degrees(SpeedPercent(power), deg, block=False)
-        self._out.on_for_degrees(SpeedPercent(-power), deg)
-
-    def down_degrees(self, deg, power=power_roller):
-        """ Turn Roller to make paper go 'down'
-
-        :param deg: Degrees of the rotation
-        :param power: Power of the rotation
-        """
-        self._in.on_for_degrees(SpeedPercent(-power), deg, block=False)
-        self._out.on_for_degrees(SpeedPercent(power), deg)
-
-    def up_forever(self, power=power_roller):
-        """Turn Roller to make paper go 'up'
-
-        :param power: Power of the rotation
-        """
-        self._in.on(SpeedPercent(power))
-        self._out.on(SpeedPercent(-power))
-
-    def down_forever(self, power=power_roller):
-        """Turn Roller to make paper go 'down'
-
-        :param power: Power of the rotation
-        """
-        self._in.on(SpeedPercent(-power))
-        self._out.on(SpeedPercent(power))
-
-    # Carriage Methods
-
-    # Pen Methods
-
-    # Reset & Setup Methods
-
-    def reset_roller(self, power=power_roller):
-        """Reset the roller position and define a new origin for roller's position
-
-        :param power: Power used to move rollers
-        """
-        pass
-
-    # Stop Methods
-
-    def stop_roller(self):
-        """ Stop moving roller
-
-        """
-        self._in.off()
-        self._out.off()
-
-    def stop_all(self):
-        """ Stop all motor
-
-        """
-        self.stop_roller()
-
-    # Position Methods
-
-    @property
-    def roller_position(self):
-        """ Get roller position
-
-        :return: roller position
-        """
-        return
-
-    # Advanced Methods
-
-    def take_paper(self, power_p=power_roller, power_g=power_grip):
+    def take_paper(self, power=None, power_grip=15):
         """ Take paper into printer and stretch it
 
-        :param power_p: Power used to take paper
-        :param power_g: Power used to stretch paper
+        :param power: Power used to take paper
+        :param power_grip: Power used to stretch paper
         """
-        self.up_forever(power_p)
+        self.up(power)
 
-        while self.color.color != 6:
+        while self._col.color != 6:
             sleep(0.1)
 
-        self.stop_roller()
-        self._out.on_for_seconds(SpeedPercent(-power_g), 1)
+        self.stop()
+        self._out.on_for_seconds(power_grip, 1)
+        self._paper_taken = self._col.color == 6
 
-    def eject_paper(self, power=power_roller):
+        self.move(-130)
+        sleep(0.2)
+        self._delta_in = self._in.position
+        self._delta_out = self._out.position
+
+    def eject_paper(self, power=None):
         """ Eject from the printer
 
         :param power: Power used to eject paper
         """
-        self.up_forever(power)
+        self.up(power)
         sleep(0.5)
 
-        while self.color.color == 6:
-            self.up_forever(power)
+        while self._col.color == 6:
+            sleep(0.1)
+            _debug(self, "Color : {}".format(self._col.color))
 
-        self.stop_roller()
+        _debug(self, "Color : {}".format(self._col.color))
+        sleep(0.5)
+        self.stop()
+        _debug(self, "Color : {}".format(self._col.color))
+        self._paper_taken = False
+        _debug(self, "Color : {}".format(self._col.color))
+        self._delta_in = 0
+        self._delta_out = 0
+
+    def __repr__(self):
+        return "\tRollers\n" \
+               "\t In \t Out\n" \
+               "Dlt \t {} \t {}\n" \
+               "Abs \t {} \t {}\n" \
+               "Rel \t {} \t {}\n".format(self._delta_in, self._delta_out, self._in.position, self._out.position,
+                                          (self.position[0] if self.has_paper else "None"),
+                                          (self.position[1] if self.has_paper else "None"))
+
+
+class Printer:
+    """A Basic Printer class to interact with the printer at low level. Use this only if you need to interact exactly
+    with the printer. """
+    #
+    # def __init__(self, prevent_paper_blocking=True):
+    #     """ Constructor of Printer class
+    #
+    #
+    #     :param prevent_paper_blocking: Set it to 'False' in order to disable roller move
+    #     """
+    #     pass

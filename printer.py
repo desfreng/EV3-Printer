@@ -173,11 +173,12 @@ class Carriage:
         :param value: Reached position"""
         self.go_to(value)
 
-    def go_to(self, position, power=None, override=False):
+    def go_to(self, position, power=None, block=True, override=False):
         """Move carriage to absolute position `position`
 
         :param position: Position reached
         :param power: Power used to move
+        :param block: If True, fonction will end at the end of the rotation
         :param override: if true, bypass limits"""
 
         if power is None:
@@ -188,18 +189,19 @@ class Carriage:
         if (not override) and (not -50 <= position <= 1240):
             raise ValueError("Position is out of reachable bounds.")
 
-        self._m.on_to_position(power, position + self._delta)
+        self._m.on_to_position(power, position + self._delta, block=block)
 
-    def move(self, value, power=None, override=False):
+    def move(self, value, power=None, block=True, override=False):
         """Move carriage of `value` degrees
 
         :param value: Position reached
         :param power: Power used to move
+        :param block: If True, fonction will end at the end of the rotation
         :param override: if true, bypass limits"""
         if power is None:
             power = self.default_power
 
-        self.go_to(self.position + value, power, override)
+        self.go_to(self.position + value, power, block, override)
 
     def save_energy(self):
         """Save energy and release motor's holding state"""
@@ -334,12 +336,14 @@ class Rollers:
         :param value: position reached"""
         self.go_to(value)
 
-    def go_to(self, position, power=None, override=False):
+    def go_to(self, position, power=None, block=True, override=False):
         """Go to absolute position `position`
 
         :param position: Position Reached
         :param power: Power used to move
+        :param block: If True, fonction will end at the end of the rotation
         :param override: if true, bypass limits"""
+
         if not self.has_paper:
             raise ValueError("There is no paper.")
 
@@ -351,12 +355,6 @@ class Rollers:
 
         _debug(self, "Reached position is {}".format(position))
 
-        _debug(self, "DeltaIn {}".format(self._delta_in))
-        _debug(self, "DeltaOut {}".format(self._delta_out))
-
-        _debug(self, "Actual In {}".format(self._in.position))
-        _debug(self, "Actual Out {}".format(self._out.position))
-
         _debug(self, "Target In {}".format(target_in))
         _debug(self, "Target Out {}".format(target_out))
 
@@ -364,18 +362,19 @@ class Rollers:
             raise ValueError("Position is out of reachable bounds.")
 
         self._in.on_to_position(power, target_in, block=False)
-        self._out.on_to_position(power, target_out, block=True)
+        self._out.on_to_position(power, target_out, block=block)
 
-    def move(self, value, power=None):
+    def move(self, value, power=None, block=True):
         """Move rollers (and paper if present) of `value` degrees
 
         :param value: Degrees to move
-        :param power; Power used to move"""
+        :param power; Power used to move
+        :param block: If True, fonction will end at the end of the rotation"""
         if power is None:
             power = self.default_power
 
         self._in.on_to_position(power, self._in.position + value, block=False)
-        self._out.on_to_position(power, self._out.position + value, block=True)
+        self._out.on_to_position(power, self._out.position + value, block=block)
 
     def up_limit(self, power=None):
         """Go to paper up limit

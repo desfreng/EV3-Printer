@@ -22,7 +22,7 @@ class Pen:
 
     def __init__(self, power=20):
         _debug(self, "Creating Pen instance")
-        self.default_power = power
+        self._default_power = power
 
         self._pen_up_position = 0  # Lambda values. Needed to be set before !
         self._pen_down_position = 40
@@ -37,7 +37,7 @@ class Pen:
         :param power: Power of the rotation
         """
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         if not self.is_up:
             self._m.on_to_position(power, self._pen_up_position)
@@ -48,7 +48,7 @@ class Pen:
         :param power: Power of the rotation
         """
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         if self.is_up:
             self._m.on_to_position(power, self._pen_down_position)
@@ -78,7 +78,7 @@ class Pen:
         :param power: Power used to move the pen
         """
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         self._m.on(-power)
         self._m.wait_until_not_moving()
@@ -105,6 +105,14 @@ class Pen:
         """Save energy and release motor's holding state"""
         self._m.off(False)
 
+    # @property
+    # def default_power(self):
+    #     return self._default_power
+    #
+    # @default_power.setter
+    # def default_power(self, value):
+    #     self._default_power = value
+
 
 class Carriage:
     """Carriage class witch allow managing the position. """
@@ -112,7 +120,7 @@ class Carriage:
     def __init__(self, power=30):
         _debug(self, "Creating Carriage instance")
 
-        self.default_power = power
+        self._default_power = power
         self._delta = 0
 
         self._m = LargeMotor(OUTPUT_B)
@@ -124,7 +132,7 @@ class Carriage:
         :param power: Power used to move the carriage
         """
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         self.right_limit(power=power, soft_limit=False)
         self._m.on_for_degrees(power, 50)
@@ -138,7 +146,7 @@ class Carriage:
         :param power: Power of the rotation
         """
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         self._m.on(power)
 
@@ -148,7 +156,7 @@ class Carriage:
         :param power: Power of the rotation
         """
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         self._m.on(-power)
 
@@ -182,7 +190,7 @@ class Carriage:
         :param override: if true, bypass limits"""
 
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         _debug(self, "Reached position is {}".format(position))
 
@@ -199,7 +207,7 @@ class Carriage:
         :param block: If True, fonction will end at the end of the rotation
         :param override: if true, bypass limits"""
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         self.go_to(self.position + value, power, block, override)
 
@@ -214,7 +222,7 @@ class Carriage:
         :param power: power used to move"""
 
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         self.right(power)
 
@@ -229,7 +237,7 @@ class Carriage:
         :param soft_limit: If True, carriage will move backward to avoid motor forcing
         :param power: power used to move"""
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         self.left(power)
 
@@ -239,6 +247,14 @@ class Carriage:
         if soft_limit:
             self.move(-50, power)
 
+    @property
+    def default_power(self):
+        return self._default_power
+
+    @default_power.setter
+    def default_power(self, value):
+        self._default_power = value
+
 
 class Rollers:
     """Rollers class witch allow managing paper. """
@@ -246,7 +262,7 @@ class Rollers:
     def __init__(self, power=30, prevent_paper_blocking=False):
         _debug(self, "Creating Rollers instance")
 
-        self.default_power = power
+        self._default_power = power
         self._delta_in = 0
         self._delta_out = 0
 
@@ -269,7 +285,7 @@ class Rollers:
         :param power: Power used to move rollers
         """
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         if self._paper_taken:
             self.eject_paper()
@@ -283,7 +299,7 @@ class Rollers:
         :param power: Power of the rotation
         """
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         self._in.on(power)
         self._out.on(power)
@@ -294,7 +310,7 @@ class Rollers:
         :param power: Power of the rotation
         """
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         self._in.on(-power)
         self._out.on(-power)
@@ -348,7 +364,7 @@ class Rollers:
             raise ValueError("There is no paper.")
 
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         target_in = self._delta_in + position
         target_out = self._delta_out + position
@@ -371,7 +387,7 @@ class Rollers:
         :param power; Power used to move
         :param block: If True, fonction will end at the end of the rotation"""
         if power is None:
-            power = self.default_power
+            power = self._default_power
 
         self._in.on_to_position(power, self._in.position + value, block=False)
         self._out.on_to_position(power, self._out.position + value, block=block)
@@ -419,26 +435,42 @@ class Rollers:
 
         while self._col.color == 6:
             sleep(0.1)
-            _debug(self, "Color : {}".format(self._col.color))
 
-        _debug(self, "Color : {}".format(self._col.color))
         sleep(0.5)
         self.stop()
-        _debug(self, "Color : {}".format(self._col.color))
         self._paper_taken = False
-        _debug(self, "Color : {}".format(self._col.color))
         self._delta_in = 0
         self._delta_out = 0
+
+    @property
+    def default_power(self):
+        return self._default_power
+
+    @default_power.setter
+    def default_power(self, value):
+        self._default_power = value
 
 
 class Printer:
     """A Basic Printer class to interact with the printer at low level. Use this only if you need
     to interact exactly with the printer. """
-    #
-    # def __init__(self, prevent_paper_blocking=True):
-    #     """ Constructor of Printer class
-    #
-    #
-    #     :param prevent_paper_blocking: Set it to 'False' in order to disable roller move
-    #     """
-    #     pass
+
+    def __init__(self, prevent_paper_blocking=True):
+        """ Constructor of Printer class
+
+        :param prevent_paper_blocking: If true, Rollers will move to avoid paper blocking
+        """
+        self.pen = Pen()
+        self.carriage = Carriage()
+        self.rollers = Rollers(prevent_paper_blocking=prevent_paper_blocking)
+
+    @property
+    def pos(self):
+        return self.carriage.position, self.rollers.position
+
+    @pos.setter
+    def pos(self, value):
+        self.go_to(value)
+
+    def go_to(self, value):
+        pass
